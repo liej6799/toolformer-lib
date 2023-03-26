@@ -1,5 +1,4 @@
 from newsapi import NewsApiClient
-from model.news_model import NewsModel
 
 class News:
     newsapi = NewsApiClient
@@ -44,3 +43,9 @@ class News:
                         break
 
         return result
+    
+class NewsModel:
+    def __init__(self, title, source, url):
+        self.title = title
+        self.source = source
+        self.url = url

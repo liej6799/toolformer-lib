@@ -12,6 +12,6 @@ class Parse:
             if source:
                 source = self.pre_prompt_source + source.strip() + self.post_prompt_source
 
-            return source + article.text.replace('\n','') 
+            return source + article.text.replace('\n','').strip()
         except:
             return ''

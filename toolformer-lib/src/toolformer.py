@@ -1,84 +1,56 @@
-
-import openplayground
-
 import tool.prompt
 import tool.news
 import tool.parse
+import helper.enum
 
 import re
 from urllib.parse import urlparse
 class ToolFormer:
-    
-    # nat.dev session token, make sure login first before access this lib
-    session_token = ''
-    client = openplayground.Client
-    news = tool.news.News
-    prompt = tool.prompt.Prompt
-    parse = tool.parse.Parse
+    _news = tool.news.News
+    _prompt = tool.prompt.Prompt
+    _parse = tool.parse.Parse
+
     min_to_summarize = 4000
 
-    def __init__(self, session_token, newsapi_apikey):
-        self.session_token = session_token
-        self.refresh_session()
-        self.news = tool.news.News(newsapi_apikey)
-        self.prompt = tool.prompt.Prompt()
-        self.parse = tool.parse.Parse()
+    def __init__(self, _newsapi_apikey):
+        self._news = tool.news.News(_newsapi_apikey)
+        self._prompt = tool.prompt.Prompt()
+        self._parse = tool.parse.Parse()
 
-    def refresh_session(self):
-        self.client = openplayground.Client(self.session_token)
-        self.check_token_valid()
-        
-    def check_token_valid(self):
-        assert len(self.client.get_models()) > 0
-    
-    def call_open_ai(self, query):
-        result = ''
-        for chunk in self.client.generate("openai:gpt-3.5-turbo", self.prompt.query(query), maximumLength=1024):        
-            if chunk["event"] == "infer":
-                result += chunk["message"]
-                print(chunk["message"], end="", flush=True)
-            if chunk["message"] == "[COMPLETED]":
-                self.on_complete(result)
-
-    def call_claude_ai(self, query):
-        for chunk in self.client.generate("anthropic:claude-instant-v1.0", query, maximumLength=1024):
-            if chunk["event"] == "infer":
-                print(chunk["message"], end="", flush=True)
-                            
-                                            
-    def on_complete(self, result):
-        match = re.match(f"([[])\S.+?({self.prompt.identifier_character})", result)
-        if match:
-            extract_tool = match.group(0)
-            extract_tool = extract_tool.replace('[', '').replace(']', '').replace(self.prompt.identifier_character, '')
-            extract_tool = [x.strip() for x in extract_tool.split(self.prompt.seperator_character)]
-            if extract_tool[0] in self.prompt.tools_definition:
-                print(self.is_url(extract_tool[1]))
-                print(extract_tool[1])
-                if self.is_url(extract_tool[1]):
-                    self.call_claude_ai(self.parse.parse(extract_tool[1])[:self.min_to_summarize])
-                else :
-                    match extract_tool[0]:
-                        case 'NEWS':
-                            combine_text= ''
-                            combine_source = '\nSources: '
-                            for news in self.news.query(extract_tool[1]):
-                                combine_text += self.parse.parse(news.url, news.source['name'])
-                                combine_source += '\n' + news.source['name'] + ':' + news.url
-                                if len(combine_text) >= self.min_to_summarize:
-                                    break
-                            self.call_claude_ai(combine_text[:self.min_to_summarize])
-                            print(combine_source)
-
-
-                        case 'PARSE':
-                            print(self.parse.parse(extract_tool[1]))
-
-    
     def query(self, query):
         assert len(query) > 0
-        print(query)
-        self.call_open_ai(query)
+        match = re.match(f"([[])\S.+?({self._prompt.identifier_character})", query)
+       
+        if not match:
+            self.print_toolFormer('prompt not matched')
+            return ToolFormerResult(helper.enum.ModelResult.NONE, '')
+
+        extract_tool = match.group(0)
+        extract_tool = extract_tool.replace('[', '').replace(']', '').replace(self._prompt.identifier_character, '')
+        extract_tool = [x.strip() for x in extract_tool.split(self._prompt.seperator_character)]
+       
+
+        if extract_tool[0] not in self._prompt.tools_definition:   
+            self.print_toolFormer('_prompt Tool Definition not matched')
+            return ToolFormerResult(helper.enum.ModelResult.NONE, '')
+        
+        if self.is_url(extract_tool[1]):
+            self.print_toolFormer('Matched URL')
+            self.print_toolFormer('Parsing: ' + extract_tool[1])
+            text = self._parse.parse(extract_tool[1])[:self.min_to_summarize]
+            self.print_toolFormer('Done parse.')
+            return ToolFormerResult(helper.enum.ModelResult.CLAUDE_INSTANT, text)
+        
+        match extract_tool[0]:
+            case 'NEWS':
+                self.print_toolFormer('Matched Tool : NEWS')
+                text = ''
+                for _news in self._news.query(extract_tool[1]):
+                    text += self._parse.parse(_news.url, _news.source['name'])
+                    if len(text) >= self.min_to_summarize:
+                        break
+                return ToolFormerResult(helper.enum.ModelResult.CLAUDE_INSTANT, text)
+            
 
     # https://stackoverflow.com/questions/7160737/how-to-validate-a-url-in-python-malformed-or-not
     def is_url(self, url):
@@ -87,3 +59,11 @@ class ToolFormer:
             return all([result.scheme, result.netloc])
         except ValueError:
             return False
+        
+    def print_toolFormer(self, text):        
+        print('ToolFormer: ' + text)
+
+class ToolFormerResult:
+    def __init__(self, ModelResult, TextResult):
+        self.ModelResult = ModelResult
+        self.TextResult = TextResult
